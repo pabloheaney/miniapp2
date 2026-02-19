@@ -158,9 +158,20 @@
         
         #particles { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; }
 
+        /* 按鈕樣式 */
         .btn-glow { box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); transition: all 0.3s ease; }
-        .btn-glow:hover { box-shadow: 0 0 25px rgba(59, 130, 246, 0.8); transform: translateY(-2px); }
-        .btn-glow:active { transform: translateY(1px); }
+        .btn-glow:not(:disabled):hover { box-shadow: 0 0 25px rgba(59, 130, 246, 0.8); transform: translateY(-2px); }
+        .btn-glow:not(:disabled):active { transform: translateY(1px); }
+        
+        /* 禁用狀態的按鈕 */
+        .btn-glow:disabled {
+            background: #334155; /* Slate 700 */
+            border-color: #475569;
+            color: #94a3b8;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
 
         .btn-secondary { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); transition: all 0.2s; }
         .btn-secondary:hover { background: rgba(255,255,255,0.2); }
@@ -236,16 +247,16 @@
     <!-- 標題區域 -->
     <header class="text-center mb-6 mt-4 relative z-10 px-4">
         <h1 class="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-300 via-purple-300 to-yellow-300 mb-2 drop-shadow-lg">
-            閃卡召喚
+            每日閃卡
         </h1>
-        <p class="text-slate-400 text-sm md:text-base">點擊翻開閃卡</p>
+        <p class="text-slate-400 text-sm md:text-base">每日一次，把握命運</p>
     </header>
 
     <!-- 控制區 -->
     <div class="mb-8 z-10 flex flex-wrap justify-center gap-4">
-        <button onclick="drawCards()" class="btn-glow bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-bold py-3 px-8 rounded-full text-xl flex items-center gap-2 border border-blue-400">
-            <i data-lucide="sparkles"></i>
-            召喚十連抽
+        <button id="summon-btn" onclick="drawCards()" class="btn-glow bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-bold py-3 px-8 rounded-full text-xl flex items-center gap-2 border border-blue-400 disabled:opacity-50">
+            <i data-lucide="sparkles" id="summon-btn-icon"></i>
+            <span id="summon-btn-text">召喚十連抽</span>
         </button>
 
         <button onclick="openShop()" class="btn-secondary text-white font-bold py-3 px-6 rounded-full text-lg flex items-center gap-2">
@@ -257,8 +268,8 @@
     <!-- 卡片網格區域 -->
     <div id="card-grid" class="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6 w-full max-w-6xl z-10 pb-10 px-4">
         <div class="text-slate-500 col-span-full text-center py-20 bg-slate-800/30 rounded-lg border border-slate-700/50">
-            <i data-lucide="arrow-up-circle" class="mx-auto mb-2 opacity-50"></i>
-            點擊「召喚十連抽」開始賺取閃卡
+            <i data-lucide="clock" class="mx-auto mb-2 opacity-50"></i>
+            每天登入，測試你的運氣
         </div>
     </div>
 
@@ -322,12 +333,39 @@
         // 初始化 Icons
         lucide.createIcons();
 
-        // --- 遊戲狀態 ---
-        let totalFlashCards = 0;
-        let vipState = {
-            level: 'none', // 'none', 'standard', 'premium'
-            expiry: 0 // timestamp
+        // --- 遊戲狀態 (從 LocalStorage 讀取) ---
+        // COOLDOWN_TIME: 24 小時的毫秒數
+        const COOLDOWN_TIME = 24 * 60 * 60 * 1000;
+        
+        let gameState = {
+            totalFlashCards: 0,
+            vipState: {
+                level: 'none',
+                expiry: 0
+            },
+            lastDrawTime: 0
         };
+
+        // 載入存檔
+        function loadGame() {
+            const saved = localStorage.getItem('flashCardGameSave');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    // 合併以確保新欄位存在
+                    gameState = { ...gameState, ...parsed };
+                } catch (e) {
+                    console.error('Save file corrupted');
+                }
+            }
+            updateStatsUI();
+            checkCooldown(); // 初始檢查冷卻
+        }
+
+        // 儲存進度
+        function saveGame() {
+            localStorage.setItem('flashCardGameSave', JSON.stringify(gameState));
+        }
 
         // 稀有度設定
         const rarities = [
@@ -337,14 +375,56 @@
             { id: 'legendary', name: '傳說', amount: 100, colorClass: 'rarity-legendary', chance: 0.01, color: '#eab308', iconColor: '#854d0e', icon: 'crown' }
         ];
 
+        // --- 冷卻計時器邏輯 ---
+        function checkCooldown() {
+            const btn = document.getElementById('summon-btn');
+            const btnText = document.getElementById('summon-btn-text');
+            const btnIcon = document.getElementById('summon-btn-icon');
+            const now = Date.now();
+            const timeSinceLastDraw = now - gameState.lastDrawTime;
+
+            if (timeSinceLastDraw < COOLDOWN_TIME) {
+                // 還在冷卻中
+                btn.disabled = true;
+                // 更新按鈕樣式移除漸層
+                btn.classList.remove('bg-gradient-to-r', 'from-blue-600', 'to-indigo-700');
+                
+                // 計算剩餘時間
+                const remaining = COOLDOWN_TIME - timeSinceLastDraw;
+                const hours = Math.floor(remaining / (1000 * 60 * 60));
+                const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+                
+                // 格式化 HH:MM:SS
+                const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                
+                btnText.innerText = `冷卻中 ${timeString}`;
+                // 移除 Icon 或換成時鐘
+                // 這裡我們把 Icon 隱藏或換成 Loader
+                
+            } else {
+                // 冷卻結束
+                if (btn.disabled) {
+                    btn.disabled = false;
+                    btn.classList.add('bg-gradient-to-r', 'from-blue-600', 'to-indigo-700');
+                    btnText.innerText = '召喚十連抽';
+                    // 播放一個小動畫提醒可以使用了
+                    btn.classList.add('animate-bounce');
+                    setTimeout(() => btn.classList.remove('animate-bounce'), 1000);
+                }
+            }
+        }
+
+        // 每秒更新倒數
+        setInterval(checkCooldown, 1000);
+
         // --- UI 更新邏輯 ---
         function updateStatsUI() {
-            // 更新餘額動畫
+            // 更新餘額
             const balanceEl = document.getElementById('balance-display');
-            // 簡單的數字跳動效果
             const currentDisplay = parseInt(balanceEl.innerText);
-            if (currentDisplay !== totalFlashCards) {
-                balanceEl.innerText = totalFlashCards;
+            if (currentDisplay !== gameState.totalFlashCards) {
+                balanceEl.innerText = gameState.totalFlashCards;
                 balanceEl.classList.add('scale-125', 'text-yellow-400');
                 setTimeout(() => balanceEl.classList.remove('scale-125', 'text-yellow-400'), 200);
             }
@@ -355,15 +435,13 @@
             const vipIconContainer = document.getElementById('vip-icon');
             const body = document.body;
 
-            // 清除舊樣式
             body.classList.remove('vip-standard', 'vip-premium');
             vipIconContainer.className = 'w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-300';
             
-            if (vipState.expiry > now) {
-                // VIP 有效
-                const timeLeft = Math.ceil((vipState.expiry - now) / (1000 * 60 * 60 * 24)); // 剩餘天數
+            if (gameState.vipState.expiry > now) {
+                const timeLeft = Math.ceil((gameState.vipState.expiry - now) / (1000 * 60 * 60 * 24));
                 
-                if (vipState.level === 'premium') {
+                if (gameState.vipState.level === 'premium') {
                     vipNameEl.innerHTML = `<span class="text-yellow-400 font-bold">高級 VIP</span> (${timeLeft}天)`;
                     vipIconContainer.classList.add('bg-yellow-600', 'border-yellow-400', 'shadow-[0_0_10px_rgba(234,179,8,0.5)]');
                     vipIconContainer.innerHTML = `<i data-lucide="crown" size="16" class="text-white"></i>`;
@@ -375,35 +453,33 @@
                     body.classList.add('vip-standard');
                 }
             } else {
-                // VIP 過期或無
-                vipState.level = 'none';
+                gameState.vipState.level = 'none';
                 vipNameEl.innerText = '無 VIP';
                 vipNameEl.className = 'font-bold text-sm leading-none text-slate-500';
                 vipIconContainer.classList.add('bg-slate-800', 'border-slate-700');
                 vipIconContainer.innerHTML = `<i data-lucide="user" size="16" class="text-slate-500"></i>`;
             }
             lucide.createIcons();
+            saveGame(); // 狀態改變時自動儲存
         }
 
         // --- 抽卡與互動邏輯 ---
         function rollRarity() {
             const rand = Math.random();
-            if (rand > 0.99) return rarities[3]; // Legendary
-            if (rand > 0.95) return rarities[2]; // Rare
-            if (rand > 0.70) return rarities[1]; // Advanced
-            return rarities[0]; // Common
+            if (rand > 0.99) return rarities[3];
+            if (rand > 0.95) return rarities[2];
+            if (rand > 0.70) return rarities[1];
+            return rarities[0];
         }
 
         function createCardElement(index) {
             const rarity = rollRarity();
-            
             const scene = document.createElement('div');
             scene.className = `scene opacity-0 translate-y-4 transition-all duration-500 ${rarity.colorClass}`;
             scene.style.transitionDelay = `${index * 50}ms`;
 
             const card = document.createElement('div');
             card.className = 'card';
-            // 標記尚未獲取獎勵
             card.dataset.rewardClaimed = "false";
             card.dataset.amount = rarity.amount;
 
@@ -433,16 +509,14 @@
 
         function bindCardEvents(scene, card, rarityId, amount) {
             let isFlipped = false;
-
             const flipCard = () => {
                 if (isFlipped) return;
                 isFlipped = true;
                 card.classList.add('is-flipped');
                 card.classList.remove('is-peeking');
                 
-                // --- 核心修改：翻牌時增加餘額 ---
                 if (card.dataset.rewardClaimed === "false") {
-                    totalFlashCards += amount;
+                    gameState.totalFlashCards += amount;
                     card.dataset.rewardClaimed = "true";
                     updateStatsUI();
                 }
@@ -459,15 +533,23 @@
                 if (e.touches.length > 1) return;
                 startPeek();
             }, { passive: true });
-
-            scene.addEventListener('touchend', (e) => {
-                endPeek();
-                flipCard();
-            });
+            scene.addEventListener('touchend', (e) => { endPeek(); flipCard(); });
             scene.addEventListener('touchcancel', endPeek);
         }
 
         function drawCards() {
+            // 雙重檢查時間
+            const now = Date.now();
+            if (now - gameState.lastDrawTime < COOLDOWN_TIME) {
+                alert("冷卻時間未到！");
+                return;
+            }
+
+            // 更新最後抽卡時間
+            gameState.lastDrawTime = now;
+            saveGame();
+            checkCooldown(); // 立即觸發 UI 更新
+
             const grid = document.getElementById('card-grid');
             grid.innerHTML = '';
             for (let i = 0; i < 10; i++) {
@@ -481,54 +563,38 @@
         }
 
         // --- 商店邏輯 ---
-        function openShop() {
-            document.getElementById('shop-modal').classList.add('active');
-        }
-
-        function closeShop() {
-            document.getElementById('shop-modal').classList.remove('active');
-        }
+        function openShop() { document.getElementById('shop-modal').classList.add('active'); }
+        function closeShop() { document.getElementById('shop-modal').classList.remove('active'); }
 
         function purchaseVIP(type) {
             const now = Date.now();
             let cost = 0;
-            let duration = 24 * 60 * 60 * 1000; // 1天
+            let duration = 24 * 60 * 60 * 1000;
 
             if (type === 'standard') cost = 100;
             if (type === 'premium') cost = 500;
 
-            if (totalFlashCards >= cost) {
-                // 扣款
-                totalFlashCards -= cost;
+            if (gameState.totalFlashCards >= cost) {
+                gameState.totalFlashCards -= cost;
                 
-                // 更新 VIP 邏輯
                 if (type === 'premium') {
-                    // 如果買高級
-                    if (vipState.level === 'premium' && vipState.expiry > now) {
-                        vipState.expiry += duration; // 延長
+                    if (gameState.vipState.level === 'premium' && gameState.vipState.expiry > now) {
+                        gameState.vipState.expiry += duration;
                     } else {
-                        // 升級或新購，覆蓋並設定為高級
-                        // 如果原本是標準且未過期，這裡簡化為直接變成高級並重算時間，或者疊加時間但升級level
-                        // 簡單邏輯：直接升級為高級，時間為 現在+1天 (或若已是高級則延長)
-                         vipState.level = 'premium';
-                         vipState.expiry = (vipState.expiry > now ? vipState.expiry : now) + duration;
+                        gameState.vipState.level = 'premium';
+                        gameState.vipState.expiry = (gameState.vipState.expiry > now ? gameState.vipState.expiry : now) + duration;
                     }
                 } else {
-                    // 如果買標準
-                    if (vipState.level === 'premium' && vipState.expiry > now) {
-                        // 已經是高級了，買標準只是浪費錢(或延長時間但降級?) 
-                        // 這裡設定為：延長時間，保持高級 (因為高級包含標準權益)
-                        vipState.expiry += duration;
+                    if (gameState.vipState.level === 'premium' && gameState.vipState.expiry > now) {
+                        gameState.vipState.expiry += duration;
                         alert('您已是高級 VIP，效期已延長！');
                     } else {
-                        vipState.level = 'standard';
-                        vipState.expiry = (vipState.expiry > now ? vipState.expiry : now) + duration;
+                        gameState.vipState.level = 'standard';
+                        gameState.vipState.expiry = (gameState.vipState.expiry > now ? gameState.vipState.expiry : now) + duration;
                     }
                 }
-                
                 updateStatsUI();
                 
-                // 購買成功回饋
                 const btn = event.currentTarget;
                 const originalContent = btn.innerHTML;
                 btn.innerHTML = `<i data-lucide="check"></i> 成功`;
@@ -538,21 +604,18 @@
                     btn.classList.remove('bg-green-600');
                     lucide.createIcons();
                 }, 1000);
-
             } else {
-                // 餘額不足動畫
                 const btn = event.currentTarget;
                 btn.classList.add('animate-pulse', 'bg-red-600');
                 setTimeout(() => btn.classList.remove('animate-pulse', 'bg-red-600'), 500);
             }
         }
 
-        // 點擊 Modal 外部關閉
         document.getElementById('shop-modal').addEventListener('click', (e) => {
             if (e.target === e.currentTarget) closeShop();
         });
 
-        // --- 粒子特效 (保持不變) ---
+        // --- 粒子特效 ---
         function createConfetti(element) {
             const rect = element.getBoundingClientRect();
             const canvas = document.getElementById('particles');
@@ -589,12 +652,13 @@
 
         // 定時檢查 VIP 過期
         setInterval(() => {
-            if (vipState.expiry > 0 && Date.now() > vipState.expiry) {
+            if (gameState.vipState.expiry > 0 && Date.now() > gameState.vipState.expiry) {
                 updateStatsUI();
             }
-        }, 60000); // 每分鐘檢查一次
+        }, 60000);
 
-        updateStatsUI();
+        // 啟動遊戲
+        loadGame();
 
     </script>
 </body>
