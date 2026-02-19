@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>每日閃卡</title>
+    <title>每日閃卡 - Telegram版</title>
+    <!-- 引入 Telegram Web App SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 引入 Lucide Icons 用於卡片圖案 -->
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -29,14 +31,14 @@
             left: 0;
             width: 100%;
             height: 70px;
-            background: rgba(15, 23, 42, 0.9);
+            background: rgba(15, 23, 42, 0.95);
             backdrop-filter: blur(10px);
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             z-index: 100;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0 20px;
+            padding: 0 16px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.3);
             transition: all 0.3s ease;
         }
@@ -44,11 +46,11 @@
         /* VIP 樣式 */
         body.vip-standard .stats-bar {
             border-bottom: 1px solid #94a3b8;
-            background: linear-gradient(to right, rgba(15, 23, 42, 0.9), rgba(51, 65, 85, 0.9));
+            background: linear-gradient(to right, rgba(15, 23, 42, 0.95), rgba(51, 65, 85, 0.95));
         }
         body.vip-premium .stats-bar {
             border-bottom: 1px solid #eab308;
-            background: linear-gradient(to right, rgba(15, 23, 42, 0.9), rgba(88, 28, 135, 0.9));
+            background: linear-gradient(to right, rgba(15, 23, 42, 0.95), rgba(88, 28, 135, 0.95));
         }
 
         /* 3D 卡片容器 */
@@ -163,9 +165,8 @@
         .btn-glow:not(:disabled):hover { box-shadow: 0 0 25px rgba(59, 130, 246, 0.8); transform: translateY(-2px); }
         .btn-glow:not(:disabled):active { transform: translateY(1px); }
         
-        /* 禁用狀態的按鈕 */
         .btn-glow:disabled {
-            background: #334155; /* Slate 700 */
+            background: #334155;
             border-color: #475569;
             color: #94a3b8;
             cursor: not-allowed;
@@ -221,25 +222,32 @@
 
     <!-- 頂部狀態列 -->
     <div class="stats-bar">
-        <!-- 錢包 -->
+        <!-- 左側：錢包 -->
         <div class="flex items-center gap-2">
-            <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
+            <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shadow-lg">
                 <i data-lucide="sparkles" size="16"></i>
             </div>
             <div>
-                <div class="text-[10px] text-slate-400 uppercase tracking-wider">持有閃卡</div>
-                <div class="font-bold text-xl leading-none" id="balance-display">0</div>
+                <div class="text-[10px] text-slate-400 uppercase tracking-wider hidden md:block">持有閃卡</div>
+                <div class="font-bold text-lg md:text-xl leading-none" id="balance-display">0</div>
             </div>
         </div>
 
-        <!-- VIP 狀態 -->
-        <div class="flex items-center gap-2" id="vip-status-container">
-            <div class="text-right">
-                <div class="text-[10px] text-slate-400 uppercase tracking-wider">VIP 狀態</div>
-                <div class="font-bold text-sm leading-none text-slate-300" id="vip-name">無 VIP</div>
+        <!-- 右側：VIP 與 用戶資訊 -->
+        <div class="flex items-center gap-3">
+            
+            <!-- VIP 狀態 (簡化顯示) -->
+            <div class="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800/50 border border-slate-700/50" id="vip-status-container">
+                <div class="w-5 h-5 rounded-full flex items-center justify-center" id="vip-icon">
+                    <i data-lucide="user" size="12" class="text-slate-400"></i>
+                </div>
+                <span class="text-xs font-bold text-slate-400" id="vip-name">無 VIP</span>
             </div>
-            <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center border border-slate-600" id="vip-icon">
-                <i data-lucide="user" size="16"></i>
+
+            <!-- Telegram 用戶資訊 (新增) -->
+            <div class="flex flex-col items-end text-right border-l border-slate-700 pl-3">
+                <div class="font-bold text-sm leading-none text-blue-300 max-w-[100px] truncate" id="tg-username">冒險者</div>
+                <div class="text-[10px] text-slate-500 font-mono" id="tg-userid">ID: ----</div>
             </div>
         </div>
     </div>
@@ -333,16 +341,44 @@
         // 初始化 Icons
         lucide.createIcons();
 
-        // --- 遊戲狀態 (從 LocalStorage 讀取) ---
-        // COOLDOWN_TIME: 24 小時的毫秒數
+        // --- Telegram 用戶整合邏輯 ---
+        function initTelegramUser() {
+            const tg = window.Telegram?.WebApp;
+            const nameEl = document.getElementById('tg-username');
+            const idEl = document.getElementById('tg-userid');
+
+            if (tg) {
+                // 通知 Telegram 應用已準備就緒
+                tg.ready();
+                // 嘗試展開視窗 (對於 Mini App 體驗較好)
+                try { tg.expand(); } catch(e) {}
+
+                // 獲取用戶數據
+                const user = tg.initDataUnsafe?.user;
+
+                if (user) {
+                    // 優先顯示 username，沒有則顯示 First Name
+                    const displayName = user.username ? `@${user.username}` : user.first_name;
+                    nameEl.textContent = displayName;
+                    idEl.textContent = `ID: ${user.id}`;
+                    
+                    // 這裡可以將 user.id 存入 gameState 以實現雲端存檔功能
+                    // gameState.userId = user.id; 
+                } else {
+                    // 非 Telegram 環境或無法獲取資料
+                    console.log("No Telegram user data found.");
+                    nameEl.textContent = "冒險者";
+                    idEl.textContent = "Web Mode";
+                }
+            }
+        }
+
+        // --- 遊戲狀態 ---
         const COOLDOWN_TIME = 24 * 60 * 60 * 1000;
         
         let gameState = {
             totalFlashCards: 0,
-            vipState: {
-                level: 'none',
-                expiry: 0
-            },
+            vipState: { level: 'none', expiry: 0 },
             lastDrawTime: 0
         };
 
@@ -352,22 +388,17 @@
             if (saved) {
                 try {
                     const parsed = JSON.parse(saved);
-                    // 合併以確保新欄位存在
                     gameState = { ...gameState, ...parsed };
-                } catch (e) {
-                    console.error('Save file corrupted');
-                }
+                } catch (e) { console.error('Save file corrupted'); }
             }
             updateStatsUI();
-            checkCooldown(); // 初始檢查冷卻
+            checkCooldown();
         }
 
-        // 儲存進度
         function saveGame() {
             localStorage.setItem('flashCardGameSave', JSON.stringify(gameState));
         }
 
-        // 稀有度設定
         const rarities = [
             { id: 'common', name: '一般', amount: 1, colorClass: 'rarity-common', chance: 0.70, color: '#9ca3af', iconColor: '#374151', icon: 'ticket' },
             { id: 'advanced', name: '高級', amount: 5, colorClass: 'rarity-advanced', chance: 0.25, color: '#3b82f6', iconColor: '#1e40af', icon: 'layers' },
@@ -375,95 +406,83 @@
             { id: 'legendary', name: '傳說', amount: 100, colorClass: 'rarity-legendary', chance: 0.01, color: '#eab308', iconColor: '#854d0e', icon: 'crown' }
         ];
 
-        // --- 冷卻計時器邏輯 ---
+        // --- 冷卻與 UI ---
         function checkCooldown() {
             const btn = document.getElementById('summon-btn');
             const btnText = document.getElementById('summon-btn-text');
-            const btnIcon = document.getElementById('summon-btn-icon');
             const now = Date.now();
             const timeSinceLastDraw = now - gameState.lastDrawTime;
 
             if (timeSinceLastDraw < COOLDOWN_TIME) {
-                // 還在冷卻中
                 btn.disabled = true;
-                // 更新按鈕樣式移除漸層
                 btn.classList.remove('bg-gradient-to-r', 'from-blue-600', 'to-indigo-700');
                 
-                // 計算剩餘時間
                 const remaining = COOLDOWN_TIME - timeSinceLastDraw;
                 const hours = Math.floor(remaining / (1000 * 60 * 60));
                 const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
                 const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
-                
-                // 格式化 HH:MM:SS
                 const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
                 
                 btnText.innerText = `冷卻中 ${timeString}`;
-                // 移除 Icon 或換成時鐘
-                // 這裡我們把 Icon 隱藏或換成 Loader
-                
             } else {
-                // 冷卻結束
                 if (btn.disabled) {
                     btn.disabled = false;
                     btn.classList.add('bg-gradient-to-r', 'from-blue-600', 'to-indigo-700');
                     btnText.innerText = '召喚十連抽';
-                    // 播放一個小動畫提醒可以使用了
                     btn.classList.add('animate-bounce');
                     setTimeout(() => btn.classList.remove('animate-bounce'), 1000);
                 }
             }
         }
 
-        // 每秒更新倒數
         setInterval(checkCooldown, 1000);
 
-        // --- UI 更新邏輯 ---
         function updateStatsUI() {
-            // 更新餘額
+            // 錢包
             const balanceEl = document.getElementById('balance-display');
-            const currentDisplay = parseInt(balanceEl.innerText);
-            if (currentDisplay !== gameState.totalFlashCards) {
+            if (parseInt(balanceEl.innerText) !== gameState.totalFlashCards) {
                 balanceEl.innerText = gameState.totalFlashCards;
                 balanceEl.classList.add('scale-125', 'text-yellow-400');
                 setTimeout(() => balanceEl.classList.remove('scale-125', 'text-yellow-400'), 200);
             }
 
-            // 更新 VIP 狀態
+            // VIP
             const now = Date.now();
             const vipNameEl = document.getElementById('vip-name');
             const vipIconContainer = document.getElementById('vip-icon');
             const body = document.body;
 
             body.classList.remove('vip-standard', 'vip-premium');
-            vipIconContainer.className = 'w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-300';
+            
+            // 重置 VIP Icon 樣式
+            vipIconContainer.className = 'w-5 h-5 rounded-full flex items-center justify-center transition-all duration-300';
             
             if (gameState.vipState.expiry > now) {
                 const timeLeft = Math.ceil((gameState.vipState.expiry - now) / (1000 * 60 * 60 * 24));
                 
                 if (gameState.vipState.level === 'premium') {
-                    vipNameEl.innerHTML = `<span class="text-yellow-400 font-bold">高級 VIP</span> (${timeLeft}天)`;
-                    vipIconContainer.classList.add('bg-yellow-600', 'border-yellow-400', 'shadow-[0_0_10px_rgba(234,179,8,0.5)]');
-                    vipIconContainer.innerHTML = `<i data-lucide="crown" size="16" class="text-white"></i>`;
+                    vipNameEl.innerHTML = `<span class="text-yellow-400">高級</span> ${timeLeft}天`;
+                    vipIconContainer.classList.add('bg-yellow-600', 'shadow-[0_0_5px_rgba(234,179,8,0.5)]');
+                    vipIconContainer.innerHTML = `<i data-lucide="crown" size="12" class="text-white"></i>`;
                     body.classList.add('vip-premium');
                 } else {
-                    vipNameEl.innerHTML = `<span class="text-slate-200 font-bold">標準 VIP</span> (${timeLeft}天)`;
-                    vipIconContainer.classList.add('bg-slate-500', 'border-slate-300');
-                    vipIconContainer.innerHTML = `<i data-lucide="shield" size="16" class="text-white"></i>`;
+                    vipNameEl.innerHTML = `<span class="text-slate-200">標準</span> ${timeLeft}天`;
+                    vipIconContainer.classList.add('bg-slate-500');
+                    vipIconContainer.innerHTML = `<i data-lucide="shield" size="12" class="text-white"></i>`;
                     body.classList.add('vip-standard');
                 }
             } else {
                 gameState.vipState.level = 'none';
                 vipNameEl.innerText = '無 VIP';
-                vipNameEl.className = 'font-bold text-sm leading-none text-slate-500';
-                vipIconContainer.classList.add('bg-slate-800', 'border-slate-700');
-                vipIconContainer.innerHTML = `<i data-lucide="user" size="16" class="text-slate-500"></i>`;
+                vipNameEl.className = 'text-xs font-bold text-slate-500';
+                vipIconContainer.classList.add('bg-slate-700');
+                vipIconContainer.innerHTML = `<i data-lucide="user" size="12" class="text-slate-400"></i>`;
             }
             lucide.createIcons();
-            saveGame(); // 狀態改變時自動儲存
+            saveGame();
         }
 
-        // --- 抽卡與互動邏輯 ---
+        // --- 抽卡邏輯 ---
         function rollRarity() {
             const rand = Math.random();
             if (rand > 0.99) return rarities[3];
@@ -538,17 +557,25 @@
         }
 
         function drawCards() {
-            // 雙重檢查時間
             const now = Date.now();
             if (now - gameState.lastDrawTime < COOLDOWN_TIME) {
-                alert("冷卻時間未到！");
+                // Telegram 震動反饋 (若支援)
+                if (window.Telegram?.WebApp?.HapticFeedback) {
+                    window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
+                } else {
+                    alert("冷卻時間未到！");
+                }
                 return;
             }
 
-            // 更新最後抽卡時間
             gameState.lastDrawTime = now;
             saveGame();
-            checkCooldown(); // 立即觸發 UI 更新
+            checkCooldown();
+            
+            // 成功抽卡震動
+            if (window.Telegram?.WebApp?.HapticFeedback) {
+                window.Telegram.WebApp.HapticFeedback.impactOccurred('medium');
+            }
 
             const grid = document.getElementById('card-grid');
             grid.innerHTML = '';
@@ -562,21 +589,23 @@
             }
         }
 
-        // --- 商店邏輯 ---
+        // --- 商店 ---
         function openShop() { document.getElementById('shop-modal').classList.add('active'); }
         function closeShop() { document.getElementById('shop-modal').classList.remove('active'); }
 
         function purchaseVIP(type) {
             const now = Date.now();
-            let cost = 0;
+            let cost = (type === 'standard') ? 100 : 500;
             let duration = 24 * 60 * 60 * 1000;
-
-            if (type === 'standard') cost = 100;
-            if (type === 'premium') cost = 500;
 
             if (gameState.totalFlashCards >= cost) {
                 gameState.totalFlashCards -= cost;
                 
+                // 成功震動
+                if (window.Telegram?.WebApp?.HapticFeedback) {
+                    window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+                }
+
                 if (type === 'premium') {
                     if (gameState.vipState.level === 'premium' && gameState.vipState.expiry > now) {
                         gameState.vipState.expiry += duration;
@@ -587,7 +616,9 @@
                 } else {
                     if (gameState.vipState.level === 'premium' && gameState.vipState.expiry > now) {
                         gameState.vipState.expiry += duration;
-                        alert('您已是高級 VIP，效期已延長！');
+                        // 提示已是高級
+                        if (window.Telegram?.WebApp) window.Telegram.WebApp.showAlert('您已是高級 VIP，效期已延長！');
+                        else alert('您已是高級 VIP，效期已延長！');
                     } else {
                         gameState.vipState.level = 'standard';
                         gameState.vipState.expiry = (gameState.vipState.expiry > now ? gameState.vipState.expiry : now) + duration;
@@ -605,6 +636,10 @@
                     lucide.createIcons();
                 }, 1000);
             } else {
+                // 失敗震動
+                if (window.Telegram?.WebApp?.HapticFeedback) {
+                    window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
+                }
                 const btn = event.currentTarget;
                 btn.classList.add('animate-pulse', 'bg-red-600');
                 setTimeout(() => btn.classList.remove('animate-pulse', 'bg-red-600'), 500);
@@ -615,7 +650,7 @@
             if (e.target === e.currentTarget) closeShop();
         });
 
-        // --- 粒子特效 ---
+        // --- 特效 ---
         function createConfetti(element) {
             const rect = element.getBoundingClientRect();
             const canvas = document.getElementById('particles');
@@ -650,14 +685,14 @@
             animate();
         }
 
-        // 定時檢查 VIP 過期
         setInterval(() => {
             if (gameState.vipState.expiry > 0 && Date.now() > gameState.vipState.expiry) {
                 updateStatsUI();
             }
         }, 60000);
 
-        // 啟動遊戲
+        // 初始化
+        initTelegramUser();
         loadGame();
 
     </script>
