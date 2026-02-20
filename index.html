@@ -24,7 +24,6 @@
             user-select: none;
             -webkit-user-select: none;
             padding-top: 80px;
-            /* 為底部導航留出空間，並適配 iPhone 底部小白條 */
             padding-bottom: calc(80px + var(--safe-area-inset-bottom)); 
         }
 
@@ -42,14 +41,8 @@
             transition: all 0.3s ease;
         }
 
-        body.vip-standard .stats-bar {
-            border-bottom: 1px solid #94a3b8;
-            background: linear-gradient(to right, rgba(15, 23, 42, 0.95), rgba(51, 65, 85, 0.95));
-        }
-        body.vip-premium .stats-bar {
-            border-bottom: 1px solid #eab308;
-            background: linear-gradient(to right, rgba(15, 23, 42, 0.95), rgba(88, 28, 135, 0.95));
-        }
+        body.vip-standard .stats-bar { border-bottom: 1px solid #94a3b8; background: linear-gradient(to right, rgba(15, 23, 42, 0.95), rgba(51, 65, 85, 0.95)); }
+        body.vip-premium .stats-bar { border-bottom: 1px solid #eab308; background: linear-gradient(to right, rgba(15, 23, 42, 0.95), rgba(88, 28, 135, 0.95)); }
 
         /* 底部導航列 */
         .bottom-nav {
@@ -66,20 +59,39 @@
         .nav-item {
             flex: 1; padding: 12px 0;
             display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-            color: #64748b; transition: all 0.2s;
+            color: #64748b; transition: all 0.2s; cursor: pointer;
         }
-        .nav-item.active {
-            color: #60a5fa; text-shadow: 0 0 10px rgba(96, 165, 250, 0.5);
-        }
+        .nav-item.active { color: #60a5fa; text-shadow: 0 0 10px rgba(96, 165, 250, 0.5); }
         .nav-item.active svg { stroke: #60a5fa; transform: translateY(-2px); }
         .nav-item svg { transition: transform 0.2s; }
 
-        /* 視圖切換 */
-        .view-section {
-            display: none; animation: fadeIn 0.3s ease;
+        /* 左右滑動視窗 (Slider) 核心 CSS */
+        .slider-viewport {
+            width: 100%;
+            overflow-x: hidden; /* 隱藏水平捲軸 */
+            position: relative;
         }
-        .view-section.active { display: block; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .slider-container {
+            display: flex;
+            width: 200%; /* 兩個分頁，所以總寬度是視窗的 2 倍 */
+            transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+            will-change: transform;
+            align-items: flex-start; /* 防止兩個頁面互相拉長到一樣高 */
+        }
+        .slide-page {
+            width: 50%; /* 每個頁面佔容器的 50% (等於視窗的 100%) */
+            flex-shrink: 0;
+            opacity: 0.5; /* 非作用中頁面稍微降低透明度，提升切換時的層次感 */
+            transition: opacity 0.4s ease;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .slide-page.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
 
         /* 抽卡系統樣式 */
         .scene { perspective: 1000px; cursor: pointer; width: 100%; aspect-ratio: 2/3; }
@@ -158,68 +170,76 @@
         </div>
     </div>
 
-    <div id="view-gacha" class="view-section active w-full flex flex-col items-center">
-        <header class="text-center mb-6 mt-4 relative z-10 px-4 w-full">
-            <h1 class="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-300 via-purple-300 to-yellow-300 mb-2 drop-shadow-lg">
-                每日抽一抽
-            </h1>
-            <p class="text-slate-400 text-sm md:text-base">每日免費十連抽，兌換免費VIP</p>
-        </header>
+    <div class="slider-viewport">
+        <div class="slider-container" id="slider-container">
+            
+            <div id="view-gacha" class="slide-page active">
+                <header class="text-center mb-6 mt-4 relative z-10 px-4 w-full">
+                    <h1 class="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-300 via-purple-300 to-yellow-300 mb-2 drop-shadow-lg">
+                        每日抽一抽
+                    </h1>
+                    <p class="text-slate-400 text-sm md:text-base">每日免費十連抽，兌換免費VIP</p>
+                </header>
 
-        <div class="mb-8 z-10 flex flex-wrap justify-center gap-4 w-full">
-            <button id="summon-btn" onclick="drawCards()" class="btn-glow bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-bold py-3 px-8 rounded-full text-xl flex items-center gap-2 border border-blue-400 disabled:opacity-50">
-                <i data-lucide="sparkles" id="summon-btn-icon"></i>
-                <span id="summon-btn-text">十連抽</span>
-            </button>
-            <button onclick="openShop()" class="btn-secondary text-white font-bold py-3 px-6 rounded-full text-lg flex items-center gap-2">
-                <i data-lucide="shopping-bag"></i> 兌換商店
-            </button>
-        </div>
-
-        <div id="card-grid" class="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6 w-full max-w-6xl z-10 pb-10 px-4">
-            <div class="text-slate-500 col-span-full text-center py-20 bg-slate-800/30 rounded-lg border border-slate-700/50">
-                <i data-lucide="clock" class="mx-auto mb-2 opacity-50 animate-pulse"></i>
-                正在連線至伺服器...
-            </div>
-        </div>
-    </div>
-
-    <div id="view-announcements" class="view-section w-full max-w-3xl px-4 mt-4">
-        <div class="flex items-center gap-2 mb-6 text-2xl font-bold text-blue-300 border-b border-slate-700/50 pb-3">
-            <i data-lucide="bell-ring"></i>
-            系統公告與狀態
-        </div>
-
-        <div id="bot-status-container" class="hidden mb-6 bg-slate-800/80 border border-slate-700 rounded-xl p-4 flex items-center justify-between shadow-lg">
-            <div class="flex items-center gap-4">
-                <div class="relative flex h-4 w-4">
-                  <span id="status-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                  <span id="status-indicator" class="relative inline-flex rounded-full h-4 w-4 bg-green-500"></span>
+                <div class="mb-8 z-10 flex flex-wrap justify-center gap-4 w-full px-4">
+                    <button id="summon-btn" onclick="drawCards()" class="btn-glow bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-bold py-3 px-8 rounded-full text-xl flex items-center gap-2 border border-blue-400 disabled:opacity-50">
+                        <i data-lucide="sparkles" id="summon-btn-icon"></i>
+                        <span id="summon-btn-text">十連抽</span>
+                    </button>
+                    <button onclick="openShop()" class="btn-secondary text-white font-bold py-3 px-6 rounded-full text-lg flex items-center gap-2">
+                        <i data-lucide="shopping-bag"></i> 兌換商店
+                    </button>
                 </div>
-                <div>
-                    <div id="bot-status-text" class="font-bold text-lg text-white">Bot 狀態載入中</div>
-                    <div id="bot-status-subtext" class="text-sm text-slate-400">連線中...</div>
+
+                <div id="card-grid" class="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6 w-full max-w-6xl z-10 pb-10 px-4">
+                    <div class="text-slate-500 col-span-full text-center py-20 bg-slate-800/30 rounded-lg border border-slate-700/50">
+                        <i data-lucide="clock" class="mx-auto mb-2 opacity-50 animate-pulse"></i>
+                        正在連線至伺服器...
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <div id="announcements-list" class="space-y-4 pb-10">
-            <div id="announcement-loading" class="text-center py-12 text-slate-500 bg-slate-800/30 rounded-lg border border-slate-700/50">
-                <i data-lucide="loader-2" class="mx-auto mb-2 animate-spin"></i>
-                載入資料中...
+            <div id="view-announcements" class="slide-page">
+                <div class="w-full max-w-3xl px-4 mt-4">
+                    <div class="flex items-center justify-center gap-2 mb-6 text-2xl font-bold text-blue-300 border-b border-slate-700/50 pb-3">
+                        <i data-lucide="bell-ring"></i>
+                        系統公告與狀態
+                    </div>
+
+                    <div id="bot-status-container" class="hidden mb-6 bg-slate-800/80 border border-slate-700 rounded-xl p-4 flex items-center justify-between shadow-lg">
+                        <div class="flex items-center gap-4">
+                            <div class="relative flex h-4 w-4">
+                            <span id="status-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span id="status-indicator" class="relative inline-flex rounded-full h-4 w-4 bg-green-500"></span>
+                            </div>
+                            <div>
+                                <div id="bot-status-text" class="font-bold text-lg text-white">Bot 狀態載入中</div>
+                                <div id="bot-status-subtext" class="text-sm text-slate-400">連線中...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="announcements-list" class="space-y-4 pb-10">
+                        <div id="announcement-loading" class="text-center py-12 text-slate-500 bg-slate-800/30 rounded-lg border border-slate-700/50">
+                            <i data-lucide="loader-2" class="mx-auto mb-2 animate-spin"></i>
+                            載入資料中...
+                        </div>
+                    </div>
+                </div>
             </div>
+
         </div>
     </div>
 
     <nav class="bottom-nav">
-        <button onclick="switchTab('gacha')" id="tab-gacha" class="nav-item active">
+        <div onclick="switchTab('gacha')" id="tab-gacha" class="nav-item active">
             <i data-lucide="layout-grid"></i>
             <span class="text-xs font-bold">抽卡</span>
-        </button>
-        <button onclick="switchTab('announcements')" id="tab-announcements" class="nav-item">
+        </div>
+        <div onclick="switchTab('announcements')" id="tab-announcements" class="nav-item">
             <i data-lucide="bell"></i>
             <span class="text-xs font-bold">公告</span>
-        </button>
+        </div>
     </nav>
 
     <div id="shop-modal" class="modal-overlay">
@@ -271,22 +291,35 @@
             'legendary': { name: '傳說', colorClass: 'rarity-legendary', iconColor: '#854d0e', icon: 'crown' }
         };
 
-        // UI Tab 切換邏輯
+        // UI 左右滑動切換邏輯
         function switchTab(tabName) {
-            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            // 1. 更新底部選單按鈕的狀態
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            
-            document.getElementById(`view-${tabName}`).classList.add('active');
             document.getElementById(`tab-${tabName}`).classList.add('active');
 
-            if (window.Telegram?.WebApp?.HapticFeedback) {
-                window.Telegram.WebApp.HapticFeedback.selectionChanged();
+            // 2. 更新 Slider 位置與透明度狀態
+            const slider = document.getElementById('slider-container');
+            document.querySelectorAll('.slide-page').forEach(el => el.classList.remove('active'));
+            document.getElementById(`view-${tabName}`).classList.add('active');
+
+            if (tabName === 'gacha') {
+                slider.style.transform = 'translateX(0%)';
+            } else if (tabName === 'announcements') {
+                slider.style.transform = 'translateX(-50%)'; // 向左平移 50% 的容器寬度 (即第二頁)
+                
+                // 首次切換到公告時自動載入資料
+                if (!window.announcementsLoaded) {
+                    loadAnnouncements();
+                    window.announcementsLoaded = true;
+                }
             }
 
-            // 如果首次進入公告，則載入數據
-            if (tabName === 'announcements' && !window.announcementsLoaded) {
-                loadAnnouncements();
-                window.announcementsLoaded = true;
+            // 避免長頁面切換到短頁面時出現留白，每次切換都平滑回頂部
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // 震動回饋
+            if (window.Telegram?.WebApp?.HapticFeedback) {
+                window.Telegram.WebApp.HapticFeedback.selectionChanged();
             }
         }
 
